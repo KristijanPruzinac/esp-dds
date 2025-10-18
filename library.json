@@ -1,0 +1,26 @@
+{
+    "name": "ESP-DDS",
+    "version": "1.0.0",
+    "description": "Lightweight DDS-like communication framework for ESP32 with FreeRTOS support",
+    "keywords": "dds, esp32, freertos, pubsub, services, actions, ros2, middleware",
+    "repository": {
+        "type": "git",
+        "url": "https://github.com/KristijanPruzinac/esp-dds.git"
+    },
+    "authors": [
+        {
+            "name": "Kristijan Pruzinac",
+            "url": "https://github.com/KristijanPruzinac"
+        }
+    ],
+    "license": "MIT",
+    "homepage": "https://github.com/KristijanPruzinac/esp-dds",
+    "frameworks": ["arduino", "espidf"],
+    "platforms": ["espressif32"],
+    "headers": ["esp_dds.h", "dds_platform.h"],
+    "examples": [
+        "examples/Basic_PubSub/src/main.cpp",
+        "examples/Services/src/main.cpp", 
+        "examples/Actions/src/main.cpp"
+    ]
+}
