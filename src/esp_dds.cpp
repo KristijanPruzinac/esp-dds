@@ -209,7 +209,9 @@ bool esp_dds_create_service(const char* service, esp_dds_service_cb_t callback,
 
 bool esp_dds_call_service_sync(const char* service, const void* request, size_t req_size,
                               void* response, size_t* resp_size, uint32_t timeout_ms) {
-    if (!service || !request || req_size > ESP_DDS_MAX_MESSAGE_SIZE) return false;
+    if (!service || !request || !response || !resp_size || req_size > ESP_DDS_MAX_MESSAGE_SIZE) {
+        return false;
+    }
     
     esp_dds_service_t* s = find_service(service);
     if (!s || !s->callback) return false;
