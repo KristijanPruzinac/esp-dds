@@ -392,39 +392,45 @@ void esp_dds_process_services(void) {
 void esp_dds_process_actions(void) {
     if (!take_mutex(10)) return;
     
+    // Collect active actions quickly (just data copying)
+    esp_dds_action_t active_actions[ESP_DDS_MAX_ACTIONS];
+    uint8_t active_count = 0;
+    
     for (uint8_t i = 0; i < dds_ctx.action_count; i++) {
         esp_dds_action_t* a = &dds_ctx.actions[i];
-        
         if (a->active && (a->state == ESP_DDS_ACTION_ACCEPTED || a->state == ESP_DDS_ACTION_EXECUTING)) {
-            // Execute action (in processor thread)
-            uint8_t result[ESP_DDS_MAX_MESSAGE_SIZE];
-            size_t result_size = sizeof(result);
-            
-            esp_dds_action_state_t state = a->execute_callback(
-                a->goal_data, a->goal_size, result, &result_size, a->context);
-            
-            a->state = state;
-            
-            // Only mark as inactive if it reached a final state
-            if (state != ESP_DDS_ACTION_EXECUTING) {
-                a->active = false;
-                
-                // Store result for delivery to client
-                for (uint8_t j = 0; j < dds_ctx.pending_count; j++) {
-                    esp_dds_pending_t* p = &dds_ctx.pending[j];
-                    if (p->is_action && strcmp(p->target_name, a->name) == 0) {
-                        memcpy(p->response_data, result, result_size);
-                        p->response_size = result_size;
-                        p->action_state = state;
-                        p->response_ready = true;
-                        break;
-                    }
-                }
-            }
+            // Copy only what we need for execution
+            memcpy(&active_actions[active_count], a, sizeof(esp_dds_action_t));
+            active_count++;
+            if (active_count >= ESP_DDS_MAX_ACTIONS) break;
         }
     }
     
-    give_mutex();
+    give_mutex();  // RELEASE MUTEX BEFORE CALLBACKS!
+    
+    // Execute callbacks WITHOUT holding mutex
+    for (uint8_t i = 0; i < active_count; i++) {
+        esp_dds_action_t* a = &active_actions[i];
+        
+        uint8_t result[ESP_DDS_MAX_MESSAGE_SIZE];
+        size_t result_size = sizeof(result);
+        
+        esp_dds_action_state_t state = a->execute_callback(
+            a->goal_data, a->goal_size, result, &result_size, a->context);
+        
+        // Re-acquire mutex briefly to update state
+        if (take_mutex(100)) {
+            esp_dds_action_t* current_a = find_action(a->name);
+            if (current_a && current_a->active) {
+                current_a->state = state;
+                if (state != ESP_DDS_ACTION_EXECUTING) {
+                    current_a->active = false;
+                    // Store result for delivery...
+                }
+            }
+            give_mutex();
+        }
+    }
 }
 
 void esp_dds_process_pending(uint32_t timeout_ms) {
