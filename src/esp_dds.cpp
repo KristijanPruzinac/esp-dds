@@ -362,13 +362,18 @@ bool esp_dds_send_feedback(const char* action, const void* feedback, size_t size
 }
 
 // Processing functions
+void esp_dds_process_services(void) {
+    // Services are processed immediately in caller's thread
+    // No background processing needed for this simple design
+}
+
 void esp_dds_process_actions(void) {
     if (!take_mutex(10)) return;
     
     for (uint8_t i = 0; i < dds_ctx.action_count; i++) {
         esp_dds_action_t* a = &dds_ctx.actions[i];
         
-        if (a->active && (a->state == ESP_DDS_ACTION_ACCEPTED || a->state == ESP_DDS_ACTION_EXECUTING)) {
+        if (a->active && a->state == ESP_DDS_ACTION_ACCEPTED) {
             // Execute action (in processor thread)
             uint8_t result[ESP_DDS_MAX_MESSAGE_SIZE];
             size_t result_size = sizeof(result);
@@ -377,21 +382,17 @@ void esp_dds_process_actions(void) {
                 a->goal_data, a->goal_size, result, &result_size, a->context);
             
             a->state = state;
+            a->active = false;
             
-            // If action completed or was canceled, mark as inactive
-            if (state != ESP_DDS_ACTION_EXECUTING) {
-                a->active = false;
-                
-                // Store result for delivery to client
-                for (uint8_t j = 0; j < dds_ctx.pending_count; j++) {
-                    esp_dds_pending_t* p = &dds_ctx.pending[j];
-                    if (p->is_action && strcmp(p->target_name, a->name) == 0) {
-                        memcpy(p->response_data, result, result_size);
-                        p->response_size = result_size;
-                        p->action_state = state;
-                        p->response_ready = true;
-                        break;
-                    }
+            // Store result for delivery to client
+            for (uint8_t j = 0; j < dds_ctx.pending_count; j++) {
+                esp_dds_pending_t* p = &dds_ctx.pending[j];
+                if (p->is_action && strcmp(p->target_name, a->name) == 0) {
+                    memcpy(p->response_data, result, result_size);
+                    p->response_size = result_size;
+                    p->action_state = state;
+                    p->response_ready = true;
+                    break;
                 }
             }
         }
