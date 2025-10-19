@@ -396,39 +396,30 @@ void esp_dds_process_actions(void) {
         esp_dds_action_t* a = &dds_ctx.actions[i];
         
         if (a->active && (a->state == ESP_DDS_ACTION_ACCEPTED || a->state == ESP_DDS_ACTION_EXECUTING)) {
-            // Release mutex before user callback
-            give_mutex();
-            
-            // Execute callback WITHOUT mutex held
+            // Execute action (in processor thread)
             uint8_t result[ESP_DDS_MAX_MESSAGE_SIZE];
             size_t result_size = sizeof(result);
+            
             esp_dds_action_state_t state = a->execute_callback(
                 a->goal_data, a->goal_size, result, &result_size, a->context);
             
-            // Re-acquire mutex to update state
-            if (take_mutex(100)) {
-                a->state = state;
+            a->state = state;
+            
+            // Only mark as inactive if it reached a final state
+            if (state != ESP_DDS_ACTION_EXECUTING) {
+                a->active = false;
                 
-                // Only mark as inactive if it reached a final state
-                if (state != ESP_DDS_ACTION_EXECUTING) {
-                    a->active = false;
-                    
-                    // Store result for delivery to client
-                    for (uint8_t j = 0; j < dds_ctx.pending_count; j++) {
-                        esp_dds_pending_t* p = &dds_ctx.pending[j];
-                        if (p->is_action && strcmp(p->target_name, a->name) == 0) {
-                            memcpy(p->response_data, result, result_size);
-                            p->response_size = result_size;
-                            p->action_state = state;
-                            p->response_ready = true;
-                            break;
-                        }
+                // Store result for delivery to client
+                for (uint8_t j = 0; j < dds_ctx.pending_count; j++) {
+                    esp_dds_pending_t* p = &dds_ctx.pending[j];
+                    if (p->is_action && strcmp(p->target_name, a->name) == 0) {
+                        memcpy(p->response_data, result, result_size);
+                        p->response_size = result_size;
+                        p->action_state = state;
+                        p->response_ready = true;
+                        break;
                     }
                 }
-                // Keep mutex for next iteration
-            } else {
-                // Failed to re-acquire mutex, skip this action
-                take_mutex(10); // Try to get mutex back for next action
             }
         }
     }
