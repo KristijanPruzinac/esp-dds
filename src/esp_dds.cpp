@@ -395,7 +395,7 @@ void esp_dds_process_actions(void) {
     for (uint8_t i = 0; i < dds_ctx.action_count; i++) {
         esp_dds_action_t* a = &dds_ctx.actions[i];
         
-        if (a->active && a->state == ESP_DDS_ACTION_ACCEPTED) {
+        if (a->active && (a->state == ESP_DDS_ACTION_ACCEPTED || a->state == ESP_DDS_ACTION_EXECUTING)) {
             // Execute action (in processor thread)
             uint8_t result[ESP_DDS_MAX_MESSAGE_SIZE];
             size_t result_size = sizeof(result);
