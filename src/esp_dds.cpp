@@ -213,9 +213,13 @@ bool esp_dds_call_service_sync(const char* service, const void* request, size_t 
     if (!take_mutex(100)) return false;
     
     esp_dds_service_t* s = find_service(service);
-    if (!s || !s->callback) return false;
+    if (!s || !s->callback) {
+        give_mutex();
+        return false;
+    }
     
     // Direct synchronous call - executes in caller's thread
+    give_mutex();
     return s->callback(request, req_size, response, resp_size, s->context);
 }
 
