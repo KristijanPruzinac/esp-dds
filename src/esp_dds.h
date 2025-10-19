@@ -6,6 +6,8 @@
 #include <stddef.h>
 #include <string.h>
 
+#include "esp_dds_platform.h"
+
 #ifdef ESP_PLATFORM
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
