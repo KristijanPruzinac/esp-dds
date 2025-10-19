@@ -392,39 +392,26 @@ void esp_dds_process_services(void) {
 void esp_dds_process_actions(void) {
     if (!take_mutex(10)) return;
     
-    // Collect actions that need processing
-    esp_dds_action_t* actions_to_process[ESP_DDS_MAX_ACTIONS];
-    uint8_t count = 0;
-    
     for (uint8_t i = 0; i < dds_ctx.action_count; i++) {
         esp_dds_action_t* a = &dds_ctx.actions[i];
+        
         if (a->active && (a->state == ESP_DDS_ACTION_ACCEPTED || a->state == ESP_DDS_ACTION_EXECUTING)) {
-            actions_to_process[count++] = a;
-            if (count >= ESP_DDS_MAX_ACTIONS) break;
-        }
-    }
-    
-    give_mutex(); // Release mutex before user callbacks
-    
-    // Process actions without holding mutex
-    for (uint8_t i = 0; i < count; i++) {
-        esp_dds_action_t* a = actions_to_process[i];
-        
-        uint8_t result[ESP_DDS_MAX_MESSAGE_SIZE];
-        size_t result_size = sizeof(result);
-        
-        esp_dds_action_state_t state = a->execute_callback(
-            a->goal_data, a->goal_size, result, &result_size, a->context);
-        
-        // Re-acquire mutex to update state
-        if (take_mutex(100)) {
-            // Re-verify action is still active (might have been cancelled)
-            esp_dds_action_t* current_a = find_action(a->name);
-            if (current_a && current_a->active) {
-                current_a->state = state;
+            // Release mutex before user callback
+            give_mutex();
+            
+            // Execute callback WITHOUT mutex held
+            uint8_t result[ESP_DDS_MAX_MESSAGE_SIZE];
+            size_t result_size = sizeof(result);
+            esp_dds_action_state_t state = a->execute_callback(
+                a->goal_data, a->goal_size, result, &result_size, a->context);
+            
+            // Re-acquire mutex to update state
+            if (take_mutex(100)) {
+                a->state = state;
                 
+                // Only mark as inactive if it reached a final state
                 if (state != ESP_DDS_ACTION_EXECUTING) {
-                    current_a->active = false;
+                    a->active = false;
                     
                     // Store result for delivery to client
                     for (uint8_t j = 0; j < dds_ctx.pending_count; j++) {
@@ -438,10 +425,15 @@ void esp_dds_process_actions(void) {
                         }
                     }
                 }
+                // Keep mutex for next iteration
+            } else {
+                // Failed to re-acquire mutex, skip this action
+                take_mutex(10); // Try to get mutex back for next action
             }
-            give_mutex();
         }
     }
+    
+    give_mutex();
 }
 
 void esp_dds_process_pending(uint32_t timeout_ms) {
