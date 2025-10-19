@@ -164,7 +164,7 @@ bool esp_dds_call_service_async(const char* service, const void* request, size_t
     do { \
         size_t resp_size_val = sizeof(response); \
         esp_dds_call_service_sync(service, &(request), sizeof(request), \
-                                 &(response), &resp_size_val, timeout); \
+                                 (void*)&(response), &resp_size_val, timeout); \
     } while(0)
 
 #define ESP_DDS_CALL_SERVICE_ASYNC(service, request, callback, context, timeout) \
