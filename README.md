@@ -17,7 +17,7 @@ A lightweight DDS-like communication framework for ESP32 with FreeRTOS support, 
 Add to your `platformio.ini`:
 ```ini
 lib_deps = 
-    KristijanPruzinac/ESP-DDS@^1.0.0
+    KristijanPruzinac/ESP-DDS@1.0.0
 ```
 
 ## Quick start
