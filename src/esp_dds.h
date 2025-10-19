@@ -165,8 +165,11 @@ bool esp_dds_call_service_async(const char* service, const void* request, size_t
 #define ESP_DDS_CALL_SERVICE_SYNC(service, request, response, timeout) \
     do { \
         size_t resp_size_val = sizeof(response); \
-        esp_dds_call_service_sync(service, &(request), sizeof(request), \
+        DDS_DEBUG_PRINT("🔍 MACRO DEBUG: resp_size_val address: 0x%p\n", (void*)&resp_size_val); \
+        DDS_DEBUG_PRINT("🔍 MACRO DEBUG: resp_size_val value: %lu\n", resp_size_val); \
+        bool result = esp_dds_call_service_sync(service, &(request), sizeof(request), \
                                  (void*)&(response), &resp_size_val, timeout); \
+        DDS_DEBUG_PRINT("🔍 MACRO DEBUG: function returned: %d\n", result); \
     } while(0)
 
 #define ESP_DDS_CALL_SERVICE_ASYNC(service, request, callback, context, timeout) \
