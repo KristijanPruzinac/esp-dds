@@ -218,14 +218,9 @@ bool esp_dds_call_service_sync(const char* service, const void* request, size_t 
         return false;
     }
     
-    // Copy callback and context while mutex is held
-    esp_dds_service_cb_t callback = s->callback;
-    void* context = s->context;
-    
-    give_mutex();  // Release before callback
-    
-    // Now execute callback with the copied values
-    return callback(request, req_size, response, resp_size, context);
+    // Direct synchronous call - executes in caller's thread
+    give_mutex();
+    return s->callback(request, req_size, response, resp_size, s->context);
 }
 
 bool esp_dds_call_service_async(const char* service, const void* request, size_t req_size,
