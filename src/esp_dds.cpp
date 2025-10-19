@@ -209,24 +209,17 @@ bool esp_dds_create_service(const char* service, esp_dds_service_cb_t callback,
 
 bool esp_dds_call_service_sync(const char* service, const void* request, size_t req_size,
                               void* response, size_t* resp_size, uint32_t timeout_ms) {
-    DDS_DEBUG_PRINT("DEBUG: esp_dds_call_service_sync called: service=%s, request=%p, response=%p, resp_size=%p\n", 
-                    service ? service : "NULL", request, response, resp_size);
-    
     if (!service || !request || !response || !resp_size || req_size > ESP_DDS_MAX_MESSAGE_SIZE) {
-        DDS_DEBUG_PRINT("DEBUG: Validation failed\n");
         return false;
     }
     
     if (!take_mutex(100)) {
-        DDS_DEBUG_PRINT("DEBUG: Failed to take mutex\n");
         return false;
     }
     
     esp_dds_service_t* s = find_service(service);
-    DDS_DEBUG_PRINT("DEBUG: find_service returned %p\n", s);
     
     if (!s || !s->callback) {
-        DDS_DEBUG_PRINT("DEBUG: Service not found or no callback\n");
         give_mutex();
         return false;
     }
@@ -235,23 +228,16 @@ bool esp_dds_call_service_sync(const char* service, const void* request, size_t 
     esp_dds_service_cb_t callback = s->callback;
     void* context = s->context;
     
-    DDS_DEBUG_PRINT("DEBUG: Cached callback=%p, context=%p\n", (void*)callback, context);
-    
     // Release mutex before calling callback (callback might take time)
     give_mutex();
     
     // Verify callback is still valid (extra safety check)
     if (!callback) {
-        DDS_DEBUG_PRINT("DEBUG: Callback is NULL after caching\n");
         return false;
     }
     
-    DDS_DEBUG_PRINT("DEBUG: About to call callback\n");
-    
     // Execute callback in caller's thread
     bool result = callback(request, req_size, response, resp_size, context);
-    
-    DDS_DEBUG_PRINT("DEBUG: Callback returned %d\n", result);
     
     return result;
 }
