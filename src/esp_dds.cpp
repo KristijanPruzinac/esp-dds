@@ -209,9 +209,6 @@ bool esp_dds_create_service(const char* service, esp_dds_service_cb_t callback,
 
 bool esp_dds_call_service_sync(const char* service, const void* request, size_t req_size,
                               void* response, size_t* resp_size, uint32_t timeout_ms) {
-
-    DDS_DEBUG_PRINT("🔍 FUNCTION DEBUG: resp_size pointer received: 0x%p", resp_size);
-    
     if (!service || !request || !response || !resp_size || req_size > ESP_DDS_MAX_MESSAGE_SIZE) return false;
     if (!take_mutex(100)) return false;
     
@@ -221,9 +218,20 @@ bool esp_dds_call_service_sync(const char* service, const void* request, size_t 
         return false;
     }
     
-    // Direct synchronous call - executes in caller's thread
+    // Cache the callback and context while we have the mutex
+    esp_dds_service_cb_t callback = s->callback;
+    void* context = s->context;
+    
+    // Release mutex before calling callback (callback might take time)
     give_mutex();
-    return s->callback(request, req_size, response, resp_size, s->context);
+    
+    // Verify callback is still valid (extra safety check)
+    if (!callback) {
+        return false;
+    }
+    
+    // Execute callback in caller's thread
+    return callback(request, req_size, response, resp_size, context);
 }
 
 bool esp_dds_call_service_async(const char* service, const void* request, size_t req_size,
