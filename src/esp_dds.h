@@ -162,7 +162,6 @@ bool esp_dds_call_service_async(const char* service, const void* request, size_t
 #define ESP_DDS_CREATE_SERVICE(service, callback, mode, context) \
     esp_dds_create_service(service, callback, mode, context)
 
-// FIXED: Now returns bool and properly handles response size
 #define ESP_DDS_CALL_SERVICE_SYNC(service, request, response, timeout) \
     ({ \
         size_t _resp_size = sizeof(response); \
