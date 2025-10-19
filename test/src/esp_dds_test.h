@@ -64,6 +64,11 @@ typedef struct {
     uint32_t total_time_ms;
 } navigation_result_t;
 
+typedef struct {
+    int progress;
+    navigation_goal_t goal;
+} navigation_context_t;
+
 // Test state
 extern uint32_t test_cycle;
 extern uint32_t total_failures;

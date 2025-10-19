@@ -14,7 +14,7 @@ void test_runner_task(void* param) {
 
 void setup() {
     Serial.begin(115200);
-    delay(2000);
+    DDS_DELAY(2000);
     Serial.println("\n\n=== ESP-DDS Test Starting ===\n");
     
     // Initialize DDS system
@@ -28,7 +28,7 @@ void setup() {
 
 void loop() {
     // Main loop - process DDS system
-    esp_dds_process_actions();
-    esp_dds_process_pending(10);
-    delay(10);
+    ESP_DDS_PROCESS_ACTIONS();
+    ESP_DDS_PROCESS_PENDING(10);
+    DDS_DELAY(10);
 }
