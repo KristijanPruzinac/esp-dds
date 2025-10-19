@@ -404,17 +404,21 @@ void esp_dds_process_actions(void) {
                 a->goal_data, a->goal_size, result, &result_size, a->context);
             
             a->state = state;
-            a->active = false;
             
-            // Store result for delivery to client
-            for (uint8_t j = 0; j < dds_ctx.pending_count; j++) {
-                esp_dds_pending_t* p = &dds_ctx.pending[j];
-                if (p->is_action && strcmp(p->target_name, a->name) == 0) {
-                    memcpy(p->response_data, result, result_size);
-                    p->response_size = result_size;
-                    p->action_state = state;
-                    p->response_ready = true;
-                    break;
+            // Only mark as inactive if it reached a final state
+            if (state != ESP_DDS_ACTION_EXECUTING) {
+                a->active = false;
+                
+                // Store result for delivery to client
+                for (uint8_t j = 0; j < dds_ctx.pending_count; j++) {
+                    esp_dds_pending_t* p = &dds_ctx.pending[j];
+                    if (p->is_action && strcmp(p->target_name, a->name) == 0) {
+                        memcpy(p->response_data, result, result_size);
+                        p->response_size = result_size;
+                        p->action_state = state;
+                        p->response_ready = true;
+                        break;
+                    }
                 }
             }
         }
