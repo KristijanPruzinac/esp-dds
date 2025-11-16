@@ -1,6 +1,6 @@
 {
     "name": "ESP-DDS",
-    "version": "2.0.0",
+    "version": "2.0.1",
     "description": "Lightweight DDS-like communication framework for ESP32 with FreeRTOS support",
     "keywords": "dds, esp32, freertos, pubsub, topic, service, sync, async, ros2, middleware",
     "repository": {
