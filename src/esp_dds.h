@@ -5,8 +5,7 @@
 #include <stdint.h>
 #include <stddef.h>
 #include <string.h>
-
-#include "dds_platform.h"
+#include <atomic>
 
 #ifdef ESP_PLATFORM
 #include "freertos/FreeRTOS.h"
@@ -22,191 +21,295 @@ typedef void* QueueHandle_t;
 #endif
 
 // Configuration - completely static allocation
-#define ESP_DDS_MAX_TOPICS 32
-#define ESP_DDS_MAX_SERVICES 24  
-#define ESP_DDS_MAX_ACTIONS 16
-#define ESP_DDS_MAX_SUBSCRIBERS_PER_TOPIC 8
-#define ESP_DDS_MAX_MESSAGE_SIZE 256
-#define ESP_DDS_MAX_NAME_LENGTH 48
-#define ESP_DDS_MIN_NAME_LENGTH 2
+#define DDS_MAX_TOPICS 32
+#define DDS_MAX_SYNC_SERVICES 16
+#define DDS_MAX_ASYNC_SERVICES 16
+#define DDS_MAX_ACTIONS 16
+#define DDS_MAX_SUBSCRIBERS_PER_TOPIC 8
+#define DDS_MAX_NAME_LENGTH 48
+#define DDS_MIN_NAME_LENGTH 2
+
+
+
+// ============================================================================
+// ASYNC CALLBACK FUNCTIONALITY
+
+#define DDS_DATA_SIZE 64
+#define DDS_TASK_QUEUE_SIZE 32
+#define DDS_TASK_QUEUE_TIMEOUT_MS 100
+
+#define DDS_NOTIFY_BIT (1 << 1) // DDS System notifies with bit 1
+#define THREAD_NOTIFY_BIT (1 << 0) // Timer notifies with bit 0
+
+// ----- Error Codes -----
+
+#define DDS_RESULT_LIST \
+    X(DDS_SUCCESS) \
+    X(DDS_ERROR_INVALID_NAME) \
+    X(DDS_ERROR_MUTEX_TIMEOUT) \
+    X(DDS_ERROR_NULL_PTR) \
+    X(DDS_ERROR_QUEUE_FULL) \
+    X(DDS_ERROR_DATA_TOO_LARGE) \
+    X(DDS_ERROR_QUEUE_INVALID) \
+    X(DDS_ERROR_SYNC_SERVICE_NOT_FOUND) \
+    X(DDS_ERROR_ASYNC_SERVICE_NOT_FOUND) \
+    X(DDS_ERROR_SYNC_SERVICE_TIMEOUT) \
+    X(DDS_ERROR_MAX_TOPICS_REACHED) \
+    X(DDS_ERROR_MAX_SUBSCRIBERS_REACHED) \
+    X(DDS_ERROR_MAX_SYNC_SERVICES_REACHED) \
+    X(DDS_ERROR_MAX_ASYNC_SERVICES_REACHED)
+
+// Generate the enum
+typedef enum {
+    #define X(name) name,
+    DDS_RESULT_LIST
+    #undef X
+} dds_result_t;
+
+// Generate string conversion
+const char* dds_result_to_string(dds_result_t result);
+
+// ----- Message data (without callback) -----
+typedef struct {
+    int64_t timestamp; // Microsecond timestamp
+    void* data[DDS_DATA_SIZE];
+    size_t data_size;
+} dds_message_data_t;
+
+// Request structure
+typedef struct {
+    int64_t timestamp;
+    void* data[DDS_DATA_SIZE];
+    size_t data_size;
+    uint32_t timeout_ms;
+} dds_service_request_t;
+
+// Response structure  
+typedef struct {
+    int64_t timestamp;
+    void* data[DDS_DATA_SIZE];
+    size_t data_size;
+} dds_service_response_t;
+
+struct dds_callback_context_s; // Forward declaration
+
+// ----- Callback type -----
+typedef void (*dds_callback_t)(struct dds_callback_context_s* context);
+typedef dds_result_t (*dds_sync_callback_t)(dds_service_request_t* request, dds_service_response_t* response);
+
+// ----- Full message (with callback, for queue) -----
+typedef struct dds_callback_context_s {
+    dds_callback_t callback;
+    QueueHandle_t* queue;
+    TaskHandle_t* task;
+
+    dds_callback_t client_callback;
+    QueueHandle_t* client_queue;
+    TaskHandle_t* client_task;
+
+    dds_message_data_t message_data;
+} dds_callback_context_t;
+
+typedef struct {
+    dds_sync_callback_t callback;
+    SemaphoreHandle_t* sync_mutex;
+} dds_sync_callback_context_t;
+
+typedef struct {
+    TaskHandle_t task;
+
+    QueueHandle_t queue;
+    dds_callback_context_t message;
+
+    SemaphoreHandle_t sync_mutex;
+
+    esp_timer_handle_t timer;
+} dds_thread_context_t;
+
+// ----- Thread messages processing -----
+void dds_process_thread_messages(dds_thread_context_t* context);
+void dds_take_mutex(dds_thread_context_t* context);
+void dds_give_mutex(dds_thread_context_t* context);
+
+// ----- Function declarations -----
+dds_result_t dds_send_async_message(dds_callback_t callback,
+                                    QueueHandle_t* queue,
+                                    TaskHandle_t* task,
+                                    const void* data, 
+                                    size_t data_size,
+                                    dds_callback_t client_callback = NULL,
+                                    QueueHandle_t* client_queue = NULL,
+                                    TaskHandle_t* client_task = NULL);
+
+dds_result_t dds_send_async_message_no_data(dds_callback_t callback,
+                                           QueueHandle_t* queue,
+                                           TaskHandle_t* task);
+
+// ============================================================================
 
 // Communication visibility
 typedef enum {
-    ESP_DDS_LOCAL_ONLY,
-    ESP_DDS_NETWORK_VISIBLE
-} esp_dds_visibility_t;
-
-// Service modes
-typedef enum {
-    ESP_DDS_SYNC,      // Execute in CLIENT's thread (blocking)
-    ESP_DDS_ASYNC,     // Execute in PROCESSOR thread (non-blocking)  
-} esp_dds_service_mode_t;
+    DDS_LOCAL_ONLY,
+    DDS_NETWORK_VISIBLE
+} dds_visibility_t;
 
 // Action states (like ROS2)
 typedef enum {
-    ESP_DDS_ACTION_ACCEPTED,
-    ESP_DDS_ACTION_EXECUTING,
-    ESP_DDS_ACTION_SUCCEEDED,
-    ESP_DDS_ACTION_CANCELED,
-    ESP_DDS_ACTION_ABORTED
-} esp_dds_action_state_t;
-
-// Callback types
-typedef void (*esp_dds_topic_cb_t)(const char* topic, const void* data, size_t size, void* context);
-typedef bool (*esp_dds_service_cb_t)(const void* request, size_t req_size, void* response, size_t* resp_size, void* context);
-typedef void (*esp_dds_async_cb_t)(const char* service, const void* response, size_t size, void* context);
-typedef bool (*esp_dds_goal_cb_t)(const void* goal, size_t size, void* context);
-typedef esp_dds_action_state_t (*esp_dds_execute_cb_t)(const void* goal, size_t goal_size, void* result, size_t* result_size, void* context);
-typedef void (*esp_dds_cancel_cb_t)(void* context);
-typedef void (*esp_dds_feedback_cb_t)(const char* action, const void* feedback, size_t size, void* context);
-typedef void (*esp_dds_result_cb_t)(const char* action, const void* result, size_t size, esp_dds_action_state_t state, void* context);
+    DDS_ACTION_ACCEPTED,
+    DDS_ACTION_EXECUTING,
+    DDS_ACTION_SUCCEEDED,
+    DDS_ACTION_CANCELED,
+    DDS_ACTION_ABORTED
+} dds_action_state_t;
 
 // Core structures
 typedef struct {
-    char name[ESP_DDS_MAX_NAME_LENGTH];
-    esp_dds_topic_cb_t callbacks[ESP_DDS_MAX_SUBSCRIBERS_PER_TOPIC];
-    void* contexts[ESP_DDS_MAX_SUBSCRIBERS_PER_TOPIC];
+    char name[DDS_MAX_NAME_LENGTH];
+    dds_callback_context_t callback_contexts[DDS_MAX_SUBSCRIBERS_PER_TOPIC];
     uint8_t subscriber_count;
-    esp_dds_visibility_t visibility;
-} esp_dds_topic_t;
+    dds_visibility_t visibility;
+} dds_topic_t;
 
 typedef struct {
-    char name[ESP_DDS_MAX_NAME_LENGTH];
-    esp_dds_service_cb_t callback;
-    esp_dds_service_mode_t mode;
-    void* context;
-    esp_dds_visibility_t visibility;
-} esp_dds_service_t;
+    char name[DDS_MAX_NAME_LENGTH];
+    dds_sync_callback_context_t callback_context;
+    dds_visibility_t visibility;
+} dds_sync_service_t;
 
 typedef struct {
-    char name[ESP_DDS_MAX_NAME_LENGTH];
-    esp_dds_goal_cb_t goal_callback;
-    esp_dds_execute_cb_t execute_callback;
-    esp_dds_cancel_cb_t cancel_callback;
-    void* context;
-    esp_dds_action_state_t state;
+    char name[DDS_MAX_NAME_LENGTH];
+    dds_callback_context_t callback_context;
+    dds_visibility_t visibility;
+} dds_async_service_t;
+
+typedef struct {
+    char name[DDS_MAX_NAME_LENGTH];
+    dds_callback_context_t goal_callback_context;
+    dds_callback_context_t execute_callback_context;
+    dds_callback_context_t cancel_callback_context;
+    dds_action_state_t state;
     bool active;
     bool cancel_requested;
-    uint8_t goal_data[ESP_DDS_MAX_MESSAGE_SIZE];
-    size_t goal_size;
-    esp_dds_visibility_t visibility;
-} esp_dds_action_t;
-
-// Pending requests for async operations
-typedef struct {
-    char target_name[ESP_DDS_MAX_NAME_LENGTH];
-    TaskHandle_t caller_task;
-    union {
-        esp_dds_async_cb_t async_cb;
-        esp_dds_feedback_cb_t feedback_cb;
-        esp_dds_result_cb_t result_cb;
-    } callback;
-    void* context;
-    uint8_t response_data[ESP_DDS_MAX_MESSAGE_SIZE];
-    size_t response_size;
-    esp_dds_action_state_t action_state;
-    bool response_ready;
-    bool is_action;
-} esp_dds_pending_t;
+    dds_visibility_t visibility;
+} dds_action_t;
 
 // Main DDS context
 typedef struct {
-    esp_dds_topic_t topics[ESP_DDS_MAX_TOPICS];
-    esp_dds_service_t services[ESP_DDS_MAX_SERVICES];
-    esp_dds_action_t actions[ESP_DDS_MAX_ACTIONS];
-    esp_dds_pending_t pending[ESP_DDS_MAX_ACTIONS]; // Reuse for both services and actions
+    dds_topic_t topics[DDS_MAX_TOPICS];
+    dds_sync_service_t sync_services[DDS_MAX_SYNC_SERVICES];
+    dds_async_service_t async_services[DDS_MAX_ASYNC_SERVICES];
+    dds_action_t actions[DDS_MAX_ACTIONS];
     
     uint8_t topic_count;
-    uint8_t service_count;
+    uint8_t sync_service_count;
+    uint8_t async_service_count;
     uint8_t action_count;
-    uint8_t pending_count;
     
     SemaphoreHandle_t mutex;
     TaskHandle_t processor_task;
     bool running;
-} esp_dds_context_t;
+} dds_context_t;
 
 // ============================================================================
 // PUBLIC API - ALL FUNCTIONS HAVE MACRO WRAPPERS FOR CONSISTENCY
 // ============================================================================
 
 // Core System API
-void esp_dds_init(void);
-void esp_dds_reset(void);
+void dds_init(void);
+void dds_reset(void);
 
-#define ESP_DDS_INIT() esp_dds_init()
-#define ESP_DDS_RESET() esp_dds_reset()
+#define DDS_INIT() dds_init()
+#define DDS_RESET() dds_reset()
+
+#define DDS_RESULT_TO_STRING(result) \
+    dds_result_to_string(result)
+
+// Thread messages processing
+#define DDS_PROCESS_THREAD_MESSAGES(context) \
+    dds_process_thread_messages(context)
+
+#define DDS_TAKE_MUTEX(context) \
+    dds_take_mutex(context)
+
+#define DDS_GIVE_MUTEX(context) \
+    dds_give_mutex(context)
 
 // Topic API
-bool esp_dds_publish(const char* topic, const void* data, size_t size);
-bool esp_dds_subscribe(const char* topic, esp_dds_topic_cb_t callback, void* context);
-void esp_dds_unsubscribe(const char* topic, esp_dds_topic_cb_t callback);
+dds_result_t dds_publish(const char* topic, const void* data, size_t size);
+dds_result_t dds_subscribe(const char* topic, dds_callback_t callback, dds_thread_context_t* thread_context);
+dds_result_t dds_unsubscribe(const char* topic, dds_callback_t callback);
 
-#define ESP_DDS_PUBLISH(topic, data) \
-    esp_dds_publish(topic, &(data), sizeof(data))
+#define DDS_PUBLISH(topic, data) \
+    dds_publish(topic, &(data), sizeof(data))
 
-#define ESP_DDS_SUBSCRIBE(topic, callback, context) \
-    esp_dds_subscribe(topic, callback, context)
+#define DDS_SUBSCRIBE(topic, callback, thread_context) \
+    dds_subscribe(topic, callback, thread_context)
 
-#define ESP_DDS_UNSUBSCRIBE(topic, callback) \
-    esp_dds_unsubscribe(topic, callback)
+#define DDS_UNSUBSCRIBE(topic, callback) \
+    dds_unsubscribe(topic, callback)
 
 // Service API  
-bool esp_dds_create_service(const char* service, esp_dds_service_cb_t callback, 
-                           esp_dds_service_mode_t mode, void* context);
-bool esp_dds_call_service_sync(const char* service, const void* request, size_t req_size,
-                              void* response, size_t* resp_size, uint32_t timeout_ms);
-bool esp_dds_call_service_async(const char* service, const void* request, size_t req_size,
-                               esp_dds_async_cb_t callback, void* context, uint32_t timeout_ms);
+dds_result_t dds_create_service_sync(const char* service, 
+                           dds_sync_callback_t callback, dds_thread_context_t* thread_context);
 
-#define ESP_DDS_CREATE_SERVICE(service, callback, mode, context) \
-    esp_dds_create_service(service, callback, mode, context)
+dds_result_t dds_create_service_async(const char* service, 
+                           dds_callback_t callback, dds_thread_context_t* thread_context);
 
-#define ESP_DDS_CALL_SERVICE_SYNC(service, request, response, timeout) \
-    ({ \
-        size_t _resp_size = sizeof(response); \
-        bool _result = esp_dds_call_service_sync(service, &(request), sizeof(request), \
-                                 (void*)&(response), &_resp_size, timeout); \
-        _result; \
-    })
+dds_result_t dds_call_service_sync(const char* service, const void* request_data, size_t size,
+                            dds_service_response_t* response, uint32_t timeout_ms);
 
-#define ESP_DDS_CALL_SERVICE_ASYNC(service, request, callback, context, timeout) \
-    esp_dds_call_service_async(service, &(request), sizeof(request), callback, context, timeout)
+dds_result_t dds_call_service_async(const char* service,
+                                        dds_callback_t client_callback,
+                                        dds_thread_context_t* client_thread_context,
+                                        const void* data,
+                                        size_t size);
+
+#define DDS_CREATE_SERVICE_SYNC(service, callback, thread_context) \
+    dds_create_service_sync(service, callback, thread_context)
+
+#define DDS_CREATE_SERVICE_ASYNC(service, callback, thread_context) \
+    dds_create_service_async(service, callback, thread_context)
+
+#define DDS_CALL_SERVICE_SYNC(service, request_data, response, timeout_ms) \
+    dds_call_service_sync(service, &(request_data), sizeof(request_data), response, timeout_ms)
+
+#define DDS_CALL_SERVICE_ASYNC(service, client_callback, client_thread_context, data) \
+    dds_call_service_async(service, client_callback, client_thread_context, &(data), sizeof(data))
+
+// Async message API
+#define DDS_SEND_ASYNC_MESSAGE(callback, queue, task, data) \
+    dds_send_async_message(callback, queue, task, &(data), sizeof(data))
+
+#define DDS_SEND_ASYNC_MESSAGE_WITH_RETURN(callback, queue, task, data, client_callback, client_queue, client_task) \
+    dds_send_async_message(callback, queue, task, &(data), sizeof(data), client_callback, client_queue, client_task)
 
 // Action API
-bool esp_dds_create_action(const char* action, esp_dds_goal_cb_t goal_cb,
-                          esp_dds_execute_cb_t execute_cb, esp_dds_cancel_cb_t cancel_cb,
+/*
+bool dds_create_action(const char* action, dds_callback_t goal_cb,
+                          dds_callback_t execute_cb, dds_callback_t cancel_cb,
                           void* context);
-bool esp_dds_send_goal(const char* action, const void* goal, size_t goal_size,
-                      esp_dds_feedback_cb_t feedback_cb, esp_dds_result_cb_t result_cb,
-                      void* context, uint32_t timeout_ms);
-bool esp_dds_cancel_goal(const char* action, uint32_t timeout_ms);
-bool esp_dds_send_feedback(const char* action, const void* feedback, size_t size);
+bool dds_send_goal(const char* action, const void* goal, size_t goal_size,
+                      dds_callback_t feedback_cb, dds_callback_t result_cb,
+                      void* context);
+bool dds_cancel_goal(const char* action);
+bool dds_send_feedback(const char* action, const void* feedback, size_t size);
 
-#define ESP_DDS_CREATE_ACTION(action, goal_cb, execute_cb, cancel_cb, context) \
-    esp_dds_create_action(action, goal_cb, execute_cb, cancel_cb, context)
+#define DDS_CREATE_ACTION(action, goal_cb, execute_cb, cancel_cb, context) \
+    dds_create_action(action, goal_cb, execute_cb, cancel_cb, context)
 
-#define ESP_DDS_SEND_GOAL(action, goal, feedback_cb, result_cb, context, timeout) \
-    esp_dds_send_goal(action, &(goal), sizeof(goal), feedback_cb, result_cb, context, timeout)
+#define DDS_SEND_GOAL(action, goal, feedback_cb, result_cb, context) \
+    dds_send_goal(action, &(goal), sizeof(goal), feedback_cb, result_cb, context)
 
-#define ESP_DDS_CANCEL_GOAL(action, timeout) \
-    esp_dds_cancel_goal(action, timeout)
+#define DDS_CANCEL_GOAL(action) \
+    dds_cancel_goal(action)
 
-#define ESP_DDS_SEND_FEEDBACK(action, feedback) \
-    esp_dds_send_feedback(action, &(feedback), sizeof(feedback))
-
-// Processing API (call this periodically from main loop)
-void esp_dds_process_services(void);
-void esp_dds_process_actions(void);
-void esp_dds_process_pending(uint32_t timeout_ms);
-
-#define ESP_DDS_PROCESS_SERVICES() esp_dds_process_services()
-#define ESP_DDS_PROCESS_ACTIONS() esp_dds_process_actions()
-#define ESP_DDS_PROCESS_PENDING(timeout) esp_dds_process_pending(timeout)
+#define DDS_SEND_FEEDBACK(action, feedback) \
+    dds_send_feedback(action, &(feedback), sizeof(feedback))
 
 // Utility
-bool esp_dds_is_goal_canceled(const char* action);
+bool dds_is_goal_canceled(const char* action);
 
-#define ESP_DDS_IS_GOAL_CANCELED(action) esp_dds_is_goal_canceled(action)
+#define DDS_IS_GOAL_CANCELED(action) dds_is_goal_canceled(action)
+*/
 
-#endif // ESP_DDS_H
+#endif
