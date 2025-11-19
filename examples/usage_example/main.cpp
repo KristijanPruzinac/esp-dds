@@ -48,7 +48,7 @@ dds_result_t test_sync_service(dds_service_request_t* request, dds_service_respo
 }
 
 static dds_thread_context_t thread_context;
-void thread_timer_callback(void* arg) { xTaskNotify(thread_context.task, THREAD_NOTIFY_BIT, eSetBits); }
+static void thread_timer_callback(void* arg) { xTaskNotify(thread_context.task, THREAD_NOTIFY_BIT, eSetBits); }
 void thread_task(void* parameter) {
     Serial.printf("Thread task started with handle %p\n", xTaskGetCurrentTaskHandle());
 
@@ -109,7 +109,7 @@ void thread_task(void* parameter) {
 }
 
 static dds_thread_context_t thread2_context;
-void thread2_timer_callback(void* arg) {
+static void thread2_timer_callback(void* arg) {
     // Send notification for timer tick
     xTaskNotify(thread2_context.task, THREAD_NOTIFY_BIT, eSetBits);
 }

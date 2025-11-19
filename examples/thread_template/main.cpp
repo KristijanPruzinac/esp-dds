@@ -3,7 +3,7 @@
 #include "esp_timer.h"
 
 static dds_thread_context_t thread_context;
-void thread_timer_callback(void* arg) { xTaskNotify(thread_context.task, THREAD_NOTIFY_BIT, eSetBits); }
+static void thread_timer_callback(void* arg) { xTaskNotify(thread_context.task, THREAD_NOTIFY_BIT, eSetBits); }
 void thread_task(void* parameter) {
     thread_context.task = xTaskGetCurrentTaskHandle();
     thread_context.queue = xQueueCreate(20, sizeof(dds_callback_context_t));
