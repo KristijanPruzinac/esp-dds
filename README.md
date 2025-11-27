@@ -313,5 +313,8 @@ void loop() {
 }
 ```
 
+## Known limitations
+Cannot call sync service from same thread that its callback function is registered to.
+
 ## License
 MIT License - see LICENSE file for details.
