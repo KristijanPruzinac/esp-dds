@@ -21,21 +21,46 @@ typedef void* QueueHandle_t;
 #endif
 
 // Configuration - completely static allocation
-#define DDS_MAX_TOPICS 32
-#define DDS_MAX_SYNC_SERVICES 16
-#define DDS_MAX_ASYNC_SERVICES 16
-#define DDS_MAX_ACTIONS 16
-#define DDS_MAX_SUBSCRIBERS_PER_TOPIC 8
-#define DDS_MAX_NAME_LENGTH 48
-#define DDS_MIN_NAME_LENGTH 2
+#ifndef DDS_MAX_TOPICS
+#define DDS_MAX_TOPICS 8
+#endif
 
+#ifndef DDS_MAX_SUBSCRIBERS_PER_TOPIC
+#define DDS_MAX_SUBSCRIBERS_PER_TOPIC 4
+#endif
+
+#ifndef DDS_MAX_SYNC_SERVICES
+#define DDS_MAX_SYNC_SERVICES 4
+#endif
+
+#ifndef DDS_MAX_ASYNC_SERVICES
+#define DDS_MAX_ASYNC_SERVICES 4
+#endif
+
+#ifndef DDS_MAX_ACTIONS
+#define DDS_MAX_ACTIONS 4
+#endif
+
+#ifndef DDS_MAX_NAME_LENGTH
+#define DDS_MAX_NAME_LENGTH 48
+#endif
+
+#ifndef DDS_MIN_NAME_LENGTH
+#define DDS_MIN_NAME_LENGTH 2
+#endif
 
 
 // ============================================================================
 // ASYNC CALLBACK FUNCTIONALITY
 
+#ifndef DDS_DATA_SIZE
 #define DDS_DATA_SIZE 64
+#endif
+
+#ifndef DDS_TASK_QUEUE_SIZE
 #define DDS_TASK_QUEUE_SIZE 32
+#endif
+
 #define DDS_TASK_QUEUE_TIMEOUT_MS 100
 
 #define DDS_NOTIFY_BIT (1 << 1) // DDS System notifies with bit 1
