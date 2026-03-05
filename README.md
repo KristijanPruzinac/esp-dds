@@ -31,7 +31,7 @@ static dds_thread_context_t thread_context;
 void thread_timer_callback(void* arg) { xTaskNotify(thread_context.task, THREAD_NOTIFY_BIT, eSetBits); }
 void thread_task(void* parameter) {
     thread_context.task = xTaskGetCurrentTaskHandle();
-    thread_context.queue = xQueueCreate(20, sizeof(dds_callback_context_t));
+    thread_context.queue = xQueueCreate(5, sizeof(dds_callback_context_t));
     thread_context.sync_mutex = xSemaphoreCreateMutex();
     
     esp_timer_create_args_t timer_args = {
@@ -39,7 +39,7 @@ void thread_task(void* parameter) {
         .arg = NULL,
     };
     esp_timer_create(&timer_args, &(thread_context.timer));
-    esp_timer_start_periodic(thread_context.timer, 10000); // 10 ms
+    esp_timer_start_periodic(thread_context.timer, 10 * 1000); // 10 ms
 
     // ------- THREAD SETUP CODE START -------
 
@@ -85,7 +85,7 @@ void setup() {
     xTaskCreate(
         thread_task,          // Task function
         NULL,                 // Name of task
-        16384,                // Stack size in words
+        4096,                 // Stack size in words
         NULL,                 // Task input parameter
         1,                    // Priority of the task
         NULL);
@@ -312,6 +312,16 @@ void loop() {
     vTaskDelay(1000);                  
 }
 ```
+## Configuration
+
+In platformio.ini:
+
+build_flags =
+	-D DDS_DATA_SIZE=64
+    -D DDS_MAX_TOPICS 8
+    -D DDS_MAX_SUBSCRIBERS_PER_TOPIC 4
+    -D DDS_MAX_SYNC_SERVICES 4
+    -D DDS_MAX_ASYNC_SERVICES 4
 
 ## Known limitations
 Cannot call sync service from same thread that its callback function is registered to.
