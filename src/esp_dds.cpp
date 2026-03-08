@@ -222,17 +222,21 @@ dds_result_t dds_publish(const char* topic, const void* data, size_t size) {
         dds_ctx.topic_count++;
     }
 
-    dds_result_t result;
+    dds_result_t result = DDS_SUCCESS;
     // Deliver to subscribers in subscriber thread
     for (uint8_t i = 0; i < t->subscriber_count; i++) {
         if (t->callback_contexts[i].callback){
-            result = dds_send_async_message(
+            dds_result_t new_result;
+            new_result = dds_send_async_message(
                 t->callback_contexts[i].callback,
                 t->callback_contexts[i].queue,
                 t->callback_contexts[i].task,
                 data,
                 size
             );
+
+            if (new_result != DDS_SUCCESS)
+                result = new_result;
         }
     }
     
