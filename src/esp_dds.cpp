@@ -1,6 +1,7 @@
 #include "esp_dds.h"
 
 static dds_context_t dds_ctx;
+static bool dds_initialized = false;
 
 // Thread messages processing
 void dds_process_thread_messages(dds_thread_context_t* context) {
@@ -56,6 +57,10 @@ static bool find_empty_slot(uint8_t* count, uint8_t max, uint8_t* index) {
 
 static bool take_mutex(uint32_t timeout_ms) {
 #ifdef ESP_PLATFORM
+    if (!dds_initialized || dds_ctx.mutex == NULL) {
+        return false;
+    }
+
     return xSemaphoreTake(dds_ctx.mutex, pdMS_TO_TICKS(timeout_ms)) == pdTRUE;
 #else
     return true; // Stub for non-ESP platforms
@@ -64,7 +69,9 @@ static bool take_mutex(uint32_t timeout_ms) {
 
 static void give_mutex(void) {
 #ifdef ESP_PLATFORM
-    xSemaphoreGive(dds_ctx.mutex);
+    if (dds_ctx.mutex != NULL) {
+        xSemaphoreGive(dds_ctx.mutex);
+    }
 #endif
 }
 
@@ -106,6 +113,8 @@ static dds_action_t* find_action(const char* name) {
 
 // Public API implementation
 void dds_init(void) {
+    if (dds_initialized) return;
+
     memset(&dds_ctx, 0, sizeof(dds_ctx));
     
 #ifdef ESP_PLATFORM
@@ -113,6 +122,7 @@ void dds_init(void) {
 #endif
     
     dds_ctx.running = true;
+    dds_initialized = true;
 }
 
 void dds_reset(void) {
@@ -144,7 +154,11 @@ dds_result_t dds_send_async_message(dds_callback_t callback,
                                     size_t data_size,
                                     dds_callback_t client_callback,
                                     QueueHandle_t* client_queue,
-                                    TaskHandle_t* client_task) { 
+                                    TaskHandle_t* client_task) {
+    if (!dds_initialized) {
+        return DDS_ERROR_NOT_INITIALIZED;
+    }
+
     if(!callback || !queue || !task) return DDS_ERROR_NULL_PTR;
     if(*queue == NULL) return DDS_ERROR_QUEUE_INVALID;
     if(data && data_size > DDS_DATA_SIZE) return DDS_ERROR_DATA_TOO_LARGE;
@@ -186,6 +200,10 @@ dds_result_t dds_send_async_message_no_data(dds_callback_t callback,
 
 // Topic implementation
 dds_result_t dds_publish(const char* topic, const void* data, size_t size) {
+    if (!dds_initialized) {
+        return DDS_ERROR_NOT_INITIALIZED;
+    }
+
     if (!dds_validate_name(topic)) return DDS_ERROR_INVALID_NAME;
     if (!topic || !data) return DDS_ERROR_NULL_PTR;
     if (size > DDS_DATA_SIZE) return DDS_ERROR_DATA_TOO_LARGE;
@@ -223,6 +241,10 @@ dds_result_t dds_publish(const char* topic, const void* data, size_t size) {
 }
 
 dds_result_t dds_subscribe(const char* topic, dds_callback_t callback, dds_thread_context_t* thread_context) {
+    if (!dds_initialized) {
+        return DDS_ERROR_NOT_INITIALIZED;
+    }
+
     if (!dds_validate_name(topic)) return DDS_ERROR_INVALID_NAME;
     if (!callback || !(&thread_context->queue) || !(&thread_context->task)) return DDS_ERROR_NULL_PTR;
     if (!take_mutex(100)) return DDS_ERROR_MUTEX_TIMEOUT;
@@ -254,6 +276,10 @@ dds_result_t dds_subscribe(const char* topic, dds_callback_t callback, dds_threa
 }
 
 dds_result_t dds_unsubscribe(const char* topic, dds_callback_t callback) {
+    if (!dds_initialized) {
+        return DDS_ERROR_NOT_INITIALIZED;
+    }
+
     if (!topic || !callback) return DDS_ERROR_NULL_PTR;
     if (!take_mutex(100)) return DDS_ERROR_MUTEX_TIMEOUT;
     
@@ -276,6 +302,10 @@ dds_result_t dds_unsubscribe(const char* topic, dds_callback_t callback) {
 
 // Service implementation
 dds_result_t dds_create_service_sync(const char* service, dds_sync_callback_t callback, dds_thread_context_t* thread_context) {
+    if (!dds_initialized) {
+        return DDS_ERROR_NOT_INITIALIZED;
+    }
+
     if (!dds_validate_name(service)) return DDS_ERROR_INVALID_NAME;
     if (!service || !callback) return DDS_ERROR_NULL_PTR;
     if (!take_mutex(100)) return DDS_ERROR_MUTEX_TIMEOUT;
@@ -300,6 +330,10 @@ dds_result_t dds_create_service_sync(const char* service, dds_sync_callback_t ca
 }
 
 dds_result_t dds_create_service_async(const char* service, dds_callback_t callback, dds_thread_context_t* thread_context) {
+    if (!dds_initialized) {
+        return DDS_ERROR_NOT_INITIALIZED;
+    }
+
     if (!dds_validate_name(service)) return DDS_ERROR_INVALID_NAME;
     if (!service || !callback) return DDS_ERROR_NULL_PTR;
     if (!take_mutex(100)) return DDS_ERROR_MUTEX_TIMEOUT;
@@ -326,6 +360,10 @@ dds_result_t dds_create_service_async(const char* service, dds_callback_t callba
 
 dds_result_t dds_call_service_sync(const char* service, const void* request_data, size_t size,
                               dds_service_response_t* response, uint32_t timeout_ms) {
+    if (!dds_initialized) {
+        return DDS_ERROR_NOT_INITIALIZED;
+    }
+
     if (!take_mutex(100)) return DDS_ERROR_MUTEX_TIMEOUT;
     
     dds_sync_service_t* s = find_sync_service(service);
@@ -371,6 +409,10 @@ dds_result_t dds_call_service_async(const char* service,
                                         dds_thread_context_t* client_thread_context,
                                         const void* data,
                                         size_t size) {
+    if (!dds_initialized) {
+        return DDS_ERROR_NOT_INITIALIZED;
+    }
+
     if (!service || !client_callback || !(&client_thread_context->queue) || !(&client_thread_context->task)) return DDS_ERROR_NULL_PTR;
     if (!take_mutex(100)) return DDS_ERROR_MUTEX_TIMEOUT;
     
