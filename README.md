@@ -316,12 +316,14 @@ void loop() {
 
 In platformio.ini:
 
+```
 build_flags =
 	-D DDS_DATA_SIZE=64
-    -D DDS_MAX_TOPICS 8
-    -D DDS_MAX_SUBSCRIBERS_PER_TOPIC 4
-    -D DDS_MAX_SYNC_SERVICES 4
-    -D DDS_MAX_ASYNC_SERVICES 4
+	-D DDS_MAX_TOPICS=8
+	-D DDS_MAX_SUBSCRIBERS_PER_TOPIC=4
+	-D DDS_MAX_SYNC_SERVICES=4
+	-D DDS_MAX_ASYNC_SERVICES=4
+```
 
 ## Known limitations
 Cannot call sync service from same thread that its callback function is registered to.
