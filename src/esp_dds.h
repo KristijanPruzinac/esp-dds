@@ -98,14 +98,14 @@ const char* dds_result_to_string(dds_result_t result);
 // ----- Message data (without callback) -----
 typedef struct {
     int64_t timestamp; // Microsecond timestamp
-    void* data[DDS_DATA_SIZE];
+    uint8_t data[DDS_DATA_SIZE];
     size_t data_size;
 } dds_message_data_t;
 
 // Request structure
 typedef struct {
     int64_t timestamp;
-    void* data[DDS_DATA_SIZE];
+    uint8_t data[DDS_DATA_SIZE];
     size_t data_size;
     uint32_t timeout_ms;
 } dds_service_request_t;
@@ -113,7 +113,7 @@ typedef struct {
 // Response structure  
 typedef struct {
     int64_t timestamp;
-    void* data[DDS_DATA_SIZE];
+    uint8_t data[DDS_DATA_SIZE];
     size_t data_size;
 } dds_service_response_t;
 
